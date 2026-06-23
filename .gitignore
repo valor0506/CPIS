@@ -1,0 +1,47 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# C extensions
+*.so
+
+# Distribution / packaging
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Pytest and coverage
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Local configuration
+.env
+.envrc
+
+# Logs
+logs/
+*.log
+
+# Databases / Vector stores
+data/
+
+# IDE files
+.vscode/
+.idea/
+.gemini/
