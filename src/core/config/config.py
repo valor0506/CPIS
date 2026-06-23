@@ -7,7 +7,7 @@ and provides a unified configuration settings object.
 import os
 from typing import Optional
 from pathlib import Path
-from pydantic import BaseModel, Field, ValidationError
+from pydantic import BaseModel, Field, ValidationError, ConfigDict
 from dotenv import load_dotenv
 
 from src.core.exceptions.exceptions import ConfigException
@@ -37,10 +37,7 @@ class Settings(BaseModel):
     GOOGLE_SHEETS_SPREADSHEET_ID: Optional[str] = Field(default=None)
     GOOGLE_APPLICATION_CREDENTIALS: Optional[str] = Field(default=None)
 
-    class Config:
-        """Pydantic model config."""
-        frozen = True
-        extra = "ignore"
+    model_config = ConfigDict(frozen=True, extra="ignore")
 
 
 _settings: Optional[Settings] = None

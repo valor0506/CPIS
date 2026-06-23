@@ -5,7 +5,7 @@ type safety and consistency across the pipeline.
 """
 
 from typing import Dict, Any, Optional
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ConfigDict
 
 
 class DocumentMetadata(BaseModel):
@@ -17,9 +17,7 @@ class DocumentMetadata(BaseModel):
     sha256: str = Field(..., description="SHA-256 checksum of the file to prevent duplicate processing.")
     custom_metadata: Dict[str, Any] = Field(default_factory=dict, description="Additional custom metadata fields.")
 
-    class Config:
-        """Pydantic configuration."""
-        frozen = True
+    model_config = ConfigDict(frozen=True)
 
 
 class Document(BaseModel):
@@ -28,6 +26,4 @@ class Document(BaseModel):
     content: str = Field(..., description="The main text contents of the document.")
     metadata: DocumentMetadata = Field(..., description="Associated document metadata.")
 
-    class Config:
-        """Pydantic configuration."""
-        frozen = True
+    model_config = ConfigDict(frozen=True)
