@@ -7,7 +7,7 @@ prior to loading and parsing.
 from abc import ABC, abstractmethod
 from pathlib import Path
 
-from src.core.config import get_settings
+from src.core.config.config import get_settings
 from src.core.exceptions.exceptions import ValidationException
 from src.core.logger.logger import setup_logger
 
