@@ -27,3 +27,13 @@ class Document(BaseModel):
     metadata: DocumentMetadata = Field(..., description="Associated document metadata.")
 
     model_config = ConfigDict(frozen=True)
+
+
+class DocumentChunk(BaseModel):
+    """Represents a single chunk of an ingested document."""
+
+    id: str = Field(..., description="Unique identifier for the chunk, e.g., {sha256}_chunk_{index}.")
+    text: str = Field(..., description="Text content of the chunk.")
+    metadata: Dict[str, Any] = Field(..., description="Metadata for the chunk, including page offsets and parent details.")
+
+    model_config = ConfigDict(frozen=True)
