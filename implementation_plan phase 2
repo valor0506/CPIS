@@ -1,0 +1,160 @@
+# Phase 2 Implementation Plan: Chunking & Vector Database Storage Layer
+
+This plan outlines the design and implementation of **Phase 2** of the **Career Pipeline Intelligence System (CPIS)**. 
+After validating, loading, and cleaning a PDF document (Phase 1), we must now segment it into semantically meaningful passages (chunks), convert those chunks into dense vector representations (embeddings), and store them in a vector database (ChromaDB) for high-performance semantic retrieval.
+
+---
+
+## Architecture & Engineering Principles Applied
+
+We follow industry-standard production-grade backend and AI engineering principles:
+1.  **SOLID Principles**:
+    *   **Single Responsibility (SRP)**: Separating the *Chunker* (text splitting), the *Embedder* (vector math/API integration), and the *VectorStore* (database storage and retrieval).
+    *   **Open-Closed (OCP) & Interface Segregation**: Defining abstract interfaces (`BaseChunker`, `BaseEmbedder`, `BaseVectorStore`) using Python's `abc` module. This allows us to swap out components (e.g., switching from local sentence-transformers to Google Gemini, or from ChromaDB to Pinecone) without modifying any core business logic.
+    *   **Dependency Injection (DI)**: Passing the embedder and vector store interfaces into our high-level orchestrator. This enables painless unit testing with mocked external dependencies.
+2.  **Idempotency & Deduplication**:
+    *   Ingesting the same resume or document twice must *never* result in duplicate chunks. We use the document's SHA-256 hash (computed in Phase 1) as a reference. Before saving new chunks, the system automatically deletes any existing chunks sharing the same SHA-256.
+3.  **Resilience & Graceful Failure**:
+    *   External API calls (Gemini) or database connections (ChromaDB) can fail. We wrap all third-party operations in custom exceptions (`EmbeddingException`, `VectorStoreException`) and log detailed error context for debugging.
+
+---
+
+## User Review Required
+
+> [!IMPORTANT]
+> **API Keys and Local vs. Cloud Embeddings**
+> We support two embedding providers:
+> 1.  **Local (`sentence-transformers` using `"all-MiniLM-L6-v2"`)**: Free, runs offline, runs on CPU/GPU locally. Great for local development and testing.
+> 2.  **Cloud (`google-generativeai` using `"models/embedding-001"`)**: High-quality Gemini embeddings. Requires internet access and a valid `GEMINI_API_KEY` set in your `.env` file.
+> 
+> By default, the system will look for a `GEMINI_API_KEY`. If not found, it will automatically fall back to the local embedding model to ensure the code works out-of-the-box.
+
+---
+
+## Open Questions
+
+None at this stage. We have pre-configured the architecture to handle both local and cloud modes automatically based on environment variables.
+
+---
+
+## Proposed Changes
+
+We will introduce a modular package structure under `src/` to house our chunking, embedding, and vector storage components.
+
+```
+src/
+├── core/
+│   ├── config/
+│   │   └── config.py          <-- [MODIFY] Add new configuration parameters
+│   └── exceptions/
+│       └── exceptions.py      <-- [MODIFY] Add EmbeddingException and VectorStoreException
+├── models/
+│   └── schemas/
+│       └── schemas.py          <-- [MODIFY] Add DocumentChunk and ChunkMetadata DTOs
+├── ingestion/
+│   └── chunking/
+│       └── chunker.py         <-- [NEW] Text splitting logic (BaseChunker, RecursiveCharacterChunker)
+├── embeddings/
+│   └── embedder.py            <-- [NEW] Embedding services (BaseEmbedder, SentenceTransformerEmbedder, GeminiEmbedder, Factory)
+├── vector_store/
+│   └── chroma_store.py        <-- [NEW] ChromaDB integration (BaseVectorStore, ChromaVectorStore)
+├── pipeline/
+│   └── ingestion_pipeline.py  <-- [NEW] Ingestion orchestrator combining Phases 1 & 2
+└── tests/
+    ├── test_chunker.py        <-- [NEW] Chunker unit tests
+    ├── test_embedder.py       <-- [NEW] Embedder unit and mock tests
+    ├── test_vector_store.py   <-- [NEW] Vector store integration and mock tests
+    └── test_pipeline.py       <-- [NEW] End-to-end pipeline integration tests
+```
+
+---
+
+### 1. Core Config & Exceptions
+
+#### [MODIFY] [config.py](file:///c:/Users/suvan/Desktop/AI%20+%20LLM%20+%20RAG/agentic-ai/src/core/config/config.py)
+*   Add configuration settings for Phase 2:
+    *   `CHUNK_SIZE`: Default `500` characters.
+    *   `CHUNK_OVERLAP`: Default `50` characters.
+    *   `EMBEDDING_PROVIDER`: `"local"` or `"gemini"` (defaults to `"gemini"` if `GEMINI_API_KEY` is present, otherwise `"local"`).
+    *   `EMBEDDING_MODEL_NAME`: `"all-MiniLM-L6-v2"` for local, `"models/embedding-001"` for Gemini.
+
+#### [MODIFY] [exceptions.py](file:///c:/Users/suvan/Desktop/AI%20+%20LLM%20+%20RAG/agentic-ai/src/core/exceptions/exceptions.py)
+*   Add two new exceptions inheriting from `CPISException`:
+    *   `EmbeddingException`: Raised when embedding generation fails.
+    *   `VectorStoreException`: Raised when database operations (write, delete, search) fail.
+
+---
+
+### 2. Data Models (Schemas)
+
+#### [MODIFY] [schemas.py](file:///c:/Users/suvan/Desktop/AI%20+%20LLM%20+%20RAG/agentic-ai/src/models/schemas/schemas.py)
+*   Add two immutable schemas:
+    *   `ChunkMetadata`: Holds references back to the parent document (`source_path`, `sha256`) along with chunk-specific indexing (`chunk_index`).
+    *   `DocumentChunk`: Holds the segment text (`content`), unique ID (`chunk_id`), and its `ChunkMetadata`.
+
+---
+
+### 3. Ingestion Chunking Layer
+
+#### [NEW] [chunker.py](file:///c:/Users/suvan/Desktop/AI%20+%20LLM%20+%20RAG/agentic-ai/src/ingestion/chunking/chunker.py)
+*   Define `BaseChunker(ABC)` interface.
+*   Implement `RecursiveCharacterChunker(BaseChunker)`. This chunker splits text using a hierarchical list of characters (e.g., double newlines, single newlines, spaces, empty string). It splits text intelligently to keep paragraphs and sentences together where possible, respecting `chunk_size` and `chunk_overlap`.
+
+---
+
+### 4. Embedding Layer
+
+#### [NEW] [embedder.py](file:///c:/Users/suvan/Desktop/AI%20+%20LLM%20+%20RAG/agentic-ai/src/embeddings/embedder.py)
+*   Define `BaseEmbedder(ABC)` interface:
+    *   `embed_text(text: str) -> List[float]`
+    *   `embed_chunks(texts: List[str]) -> List[List[float]]`
+*   Implement `SentenceTransformerEmbedder` using the local library.
+*   Implement `GeminiEmbedder` using `google-generativeai`.
+*   Implement `EmbeddingFactory` to dynamically load the active provider from `Settings`.
+
+---
+
+### 5. Vector Storage Layer
+
+#### [NEW] [chroma_store.py](file:///c:/Users/suvan/Desktop/AI%20+%20LLM%20+%20RAG/agentic-ai/src/vector_store/chroma_store.py)
+*   Define `BaseVectorStore(ABC)` interface:
+    *   `add_chunks(chunks: List[DocumentChunk], embeddings: List[List[float]]) -> None`
+    *   `delete_document_chunks(sha256: str) -> None`
+    *   `similarity_search(query_vector: List[float], limit: int = 3) -> List[DocumentChunk]`
+*   Implement `ChromaVectorStore` wrapping `chromadb.PersistentClient`.
+*   Implement the **idempotency rule**: when adding chunks, first trigger `delete_document_chunks(sha256)` to wipe out stale chunks of the same file, avoiding duplicates.
+
+---
+
+### 6. Pipeline Orchestration
+
+#### [NEW] [ingestion_pipeline.py](file:///c:/Users/suvan/Desktop/AI%20+%20LLM%20+%20RAG/agentic-ai/src/pipeline/ingestion_pipeline.py)
+*   Create a class `IngestionPipeline` that orchestrates:
+    1.  `PDFFileValidator` -> Validates file path, size, type, magic bytes.
+    2.  `PDFDocumentLoader` -> Extracts raw text and metadata (SHA-256).
+    3.  `StandardDocumentParser` -> Cleans and normalizes text.
+    4.  `RecursiveCharacterChunker` -> Splits cleaned text into chunks.
+    5.  `BaseEmbedder` (via Factory) -> Computes embeddings.
+    6.  `BaseVectorStore` -> Checks for existing SHA-256, deletes old records, and saves new chunks + embeddings.
+*   Returns a summary dictionary (e.g., `{"sha256": "...", "chunks_created": 5, "status": "success"}`).
+
+---
+
+## Verification Plan
+
+### Automated Tests
+We will add a robust testing suite under `src/tests/` to verify each new module:
+1.  **`test_chunker.py`**:
+    *   Verify chunker correctly segments short and long text.
+    *   Verify chunker respects `chunk_size` and `chunk_overlap` constraints.
+2.  **`test_embedder.py`**:
+    *   Mock both local and Gemini APIs to test successful embedding generation.
+    *   Verify that `EmbeddingException` is raised if APIs fail or return empty data.
+3.  **`test_vector_store.py`**:
+    *   Use an in-memory/ephemeral Chroma client (`chromadb.EphemeralClient`) for testing.
+    *   Verify insertion of chunks, deduplication (deleting old chunks when inserting same SHA-256), and basic similarity retrieval.
+4.  **`test_pipeline.py`**:
+    *   Verify the end-to-end integration flow using mocked components and a sample document.
+
+### Manual Verification
+*   We will write a scratch script `scratch/test_ingestion_run.py` to ingest a real sample PDF file, verify that the SQLite/Chroma DB files are created under `data/chroma/`, and perform a manual query search to print the top retrieved chunks.
