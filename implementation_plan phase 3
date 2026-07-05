@@ -1,0 +1,85 @@
+# Implementation Plan - CPIS Phase 3: LangGraph Agentic Parser & Matcher
+
+This document outlines the design and implementation details for Phase 3 of the Career Pipeline Intelligence System (CPIS) — the **LangGraph Agentic Resume Extraction, Validation, Self-Correction, and Job Matching Layer**.
+
+## User Review Required
+
+We are building a stateful, cyclic multi-agent system using LangGraph that processes ingested candidate resumes. The system will perform:
+1. **Structured LLM Extraction**: Feed clean resume text to the Gemini API to extract structured fields conforming to a robust Pydantic schema.
+2. **Self-Correction Loop**: Validate the extracted fields against business rules (e.g., presence of candidate name, valid email, non-empty skills). If validation fails, loop back to the extraction node with details of the validation errors so the model can self-correct, up to a configurable max revision limit.
+3. **Semantic Job Matching**: Search ChromaDB vector store for matching jobs using candidate skills and experience context, evaluating fit scores.
+
+> [!IMPORTANT]
+> **API Key dependency & Mocking**
+> - Production execution requires a valid `GEMINI_API_KEY`.
+> - For unit/integration tests and offline development, we will design the agent layer to support mock LLM responses. This guarantees that test suites run successfully in any environment.
+
+## Open Questions
+
+None. We will implement robust schemas and prompts following best practices, keeping all variables configurable via settings.
+
+---
+
+## Proposed Changes
+
+We will introduce the `agents` package, update data models, configure new settings, and add dedicated tests.
+
+### 1. Configuration & Exceptions
+
+#### [MODIFY] [config.py](file:///c:/Users/suvan/Desktop/AI%20+%20LLM%20+%20RAG/agentic-ai/src/core/config/config.py)
+- **What it owns**: Add `MAX_REVISION_COUNT` (default `3`) configuration parameter for the self-correction loops.
+
+#### [MODIFY] [exceptions.py](file:///c:/Users/suvan/Desktop/AI%20+%20LLM%20+%20RAG/agentic-ai/src/core/exceptions/exceptions.py)
+- **What it owns**: Add `AgentException` for failures in the agent execution flow.
+
+### 2. Data Models (Schemas)
+
+#### [MODIFY] [schemas.py](file:///c:/Users/suvan/Desktop/AI%20+%20LLM%20+%20RAG/agentic-ai/src/models/schemas/schemas.py)
+- **What it owns**: Define schemas for structured resume extraction:
+  - `PersonalInfo`: Contact information (name, email, phone, location).
+  - `Education`: School history (degree, major, institution, graduation_year).
+  - `Experience`: Work history (job_title, company, duration, description).
+  - `ResumeSchema`: Main schema containing `personal_info`, `education`, `experience`, and `skills` (list of strings).
+  - `JobMatchResult`: Model to store matched job details and a calculated semantic fit score.
+
+### 3. Agentic Layer (LangGraph)
+
+#### [NEW] [state.py](file:///c:/Users/suvan/Desktop/AI%20+%20LLM%20+%20RAG/agentic-ai/src/agents/state.py)
+- **What it owns**: Defines the `AgentState` typed dictionary representing the immutable state passing through graph nodes:
+  - `messages`: Annotated history of messages/prompts.
+  - `document_content`: Full resume text.
+  - `document_id`: SHA-256 hash reference.
+  - `extracted_data`: Instance of `ResumeSchema` (or dict) if parsed.
+  - `validation_errors`: List of validation errors to feed back to the LLM during self-correction.
+  - `revision_count`: Tracker for loop limit.
+  - `matched_jobs`: List of `JobMatchResult` matching candidates to open positions.
+
+#### [NEW] [nodes.py](file:///c:/Users/suvan/Desktop/AI%20+%20LLM%20+%20RAG/agentic-ai/src/agents/nodes.py)
+- **What it owns**: Node functions for the LangGraph workflow:
+  - `extract_resume`: Node that prompts Gemini to extract structured JSON data. If `validation_errors` are present, appends them to a correction prompt to guide the model.
+  - `validate_data`: Node that performs custom Python validation rules (e.g. valid email, valid phone, candidate name present, skills present).
+  - `match_job`: Node that queries ChromaDB using candidate details to find top matches and returns scores.
+
+#### [NEW] [graph.py](file:///c:/Users/suvan/Desktop/AI%20+%20LLM%20+%20RAG/agentic-ai/src/agents/graph.py)
+- **What it owns**: Compiles the nodes, defines edges, builds the `StateGraph` object, and exposes a high-level `run_agentic_pipeline` function.
+- **Routing logic**:
+  - `START` -> `extract_resume` -> `validate_data`
+  - `validate_data` -> conditional routing:
+    - If valid or `revision_count >= MAX_REVISIONS` -> `match_job` -> `END`
+    - If invalid -> `extract_resume` (self-correction loop)
+
+---
+
+## Verification Plan
+
+### Automated Tests
+We will add `src/tests/test_agent.py` to cover:
+- Successful extraction, validation, and matching flow using mocked Gemini LLM responses.
+- Correct execution of the self-correction loop when initial extraction violates validation rules.
+- Termination of the loop when the maximum retry limit is reached.
+- Query search and mapping inside `match_job` node.
+
+We will verify with:
+```bash
+python -m pytest src/tests/test_agent.py
+```
