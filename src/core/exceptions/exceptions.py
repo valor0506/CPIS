@@ -34,3 +34,9 @@ class IngestionException(CPISException):
 class ValidationException(CPISException):
     """Raised when file validation (e.g. format, size, security checks) fails."""
     pass
+
+
+class AgentException(CPISException):
+    """Raised when agent execution, parsing, or matching fails."""
+    pass
+
