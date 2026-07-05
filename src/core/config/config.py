@@ -31,6 +31,7 @@ class Settings(BaseModel):
     
     # Ingestion constraints
     FILE_UPLOAD_MAX_SIZE_MB: int = Field(default=10)
+    MAX_REVISION_COUNT: int = Field(default=3)
 
     # API Keys & Third-party integrations
     GEMINI_API_KEY: Optional[str] = Field(default=None)
@@ -60,6 +61,7 @@ def get_settings() -> Settings:
                 "LOG_FILE_PATH": os.getenv("LOG_FILE_PATH", "logs/cpis.log"),
                 "VECTOR_DB_PATH": os.getenv("VECTOR_DB_PATH", "data/chroma"),
                 "FILE_UPLOAD_MAX_SIZE_MB": int(os.getenv("FILE_UPLOAD_MAX_SIZE_MB", "10")),
+                "MAX_REVISION_COUNT": int(os.getenv("MAX_REVISION_COUNT", "3")),
                 "GEMINI_API_KEY": os.getenv("GEMINI_API_KEY"),
                 "GOOGLE_SHEETS_SPREADSHEET_ID": os.getenv("GOOGLE_SHEETS_SPREADSHEET_ID"),
                 "GOOGLE_APPLICATION_CREDENTIALS": os.getenv("GOOGLE_APPLICATION_CREDENTIALS"),
