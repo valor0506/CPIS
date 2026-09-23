@@ -42,7 +42,9 @@ def mock_vector_store():
 def test_agent_success_flow(mock_model_cls, mock_settings, mock_vector_store):
     """Verify that the agent extracts, validates, and matches jobs successfully without retries."""
     # Set up mock response
-    mock_model = MagicMock()
+    mock_class_response = MagicMock()
+    mock_class_response.text = '{"is_resume": true}'
+
     mock_response = MagicMock()
     mock_response.text = json.dumps({
         "personal_info": {
@@ -69,7 +71,9 @@ def test_agent_success_flow(mock_model_cls, mock_settings, mock_vector_store):
         ],
         "skills": ["Python", "Pydantic", "SQL"]
     })
-    mock_model.generate_content.return_value = mock_response
+    
+    mock_model = MagicMock()
+    mock_model.generate_content.side_effect = [mock_class_response, mock_response]
     mock_model_cls.return_value = mock_model
 
     # Run pipeline
@@ -95,6 +99,9 @@ def test_agent_success_flow(mock_model_cls, mock_settings, mock_vector_store):
 def test_agent_self_correction_loop(mock_model_cls, mock_settings, mock_vector_store):
     """Verify that the agent loops back to self-correct when validation errors occur."""
     mock_model = MagicMock()
+    
+    mock_class_response = MagicMock()
+    mock_class_response.text = '{"is_resume": true}'
     
     # First response: invalid email and missing skills
     response_invalid = MagicMock()
@@ -125,7 +132,7 @@ def test_agent_self_correction_loop(mock_model_cls, mock_settings, mock_vector_s
     })
 
     # Feed consecutive return values to simulate correction success
-    mock_model.generate_content.side_effect = [response_invalid, response_corrected]
+    mock_model.generate_content.side_effect = [mock_class_response, response_invalid, response_corrected]
     mock_model_cls.return_value = mock_model
 
     # Run pipeline
@@ -146,6 +153,9 @@ def test_agent_max_revisions_termination(mock_model_cls, mock_settings, mock_vec
     """Verify that the agent exits the self-correction cycle after reaching max revisions."""
     mock_model = MagicMock()
     
+    mock_class_response = MagicMock()
+    mock_class_response.text = '{"is_resume": true}'
+    
     # Repeatedly return invalid data (missing email & skills)
     response_invalid = MagicMock()
     response_invalid.text = json.dumps({
@@ -160,7 +170,8 @@ def test_agent_max_revisions_termination(mock_model_cls, mock_settings, mock_vec
         "skills": []
     })
     
-    mock_model.generate_content.return_value = response_invalid
+    # Classification -> invalid -> invalid -> invalid
+    mock_model.generate_content.side_effect = [mock_class_response, response_invalid, response_invalid, response_invalid, response_invalid]
     mock_model_cls.return_value = mock_model
 
     # Run pipeline
@@ -188,3 +199,26 @@ def test_agent_missing_api_key(monkeypatch):
             document_content="Candidate info",
             document_id="hash123"
         )
+
+
+@patch("src.agents.nodes.genai.GenerativeModel")
+def test_agent_halts_on_non_resume(mock_model_cls, mock_settings):
+    """Verify that the agent halts execution early if document is not a resume."""
+    mock_model = MagicMock()
+    
+    mock_class_response = MagicMock()
+    mock_class_response.text = '{"is_resume": false}'
+    
+    mock_model.generate_content.return_value = mock_class_response
+    mock_model_cls.return_value = mock_model
+
+    final_state = run_agentic_pipeline(
+        document_content="Today's Lunch Special: Pizza and Pasta.",
+        document_id="restaurant_menu"
+    )
+
+    # Agent should halt after classify_document and not proceed to extract_resume
+    assert final_state["is_resume"] is False
+    assert final_state["extracted_data"] is None
+    assert final_state["revision_count"] == 0
+    assert len(final_state["matched_jobs"]) == 0
