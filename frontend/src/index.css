@@ -1,0 +1,26 @@
+@import url("https://fonts.googleapis.com/css2?family=Barlow:ital,wght@0,400;0,500;0,600;0,700;0,800;0,900&display=swap");
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --black: #0B0B0B;
+  --white: #FFFFFF;
+  --blue: #2200FF;
+  --gray: #888888;
+  --border: #222222;
+}
+* { margin: 0; padding: 0; box-sizing: border-box; }
+html { scroll-behavior: smooth; }
+body {
+  background-color: var(--black);
+  color: var(--white);
+  font-family: "Barlow", -apple-system, BlinkMacSystemFont, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  font-weight: 400;
+}
+::selection { background: var(--blue); color: var(--white); }
+::-webkit-scrollbar { width: 4px; }
+::-webkit-scrollbar-track { background: #0B0B0B; }
+::-webkit-scrollbar-thumb { background: #333; }
