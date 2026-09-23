@@ -20,6 +20,64 @@ from src.agents.state import AgentState
 logger = setup_logger("agent_nodes")
 
 
+def classify_document(state: AgentState) -> Dict[str, Any]:
+    """Determine if the document is a resume before expensive processing.
+
+    Args:
+        state: The current agent state.
+
+    Returns:
+        Dict[str, Any]: State updates with is_resume boolean.
+    """
+    settings = get_settings()
+    content = state["document_content"]
+
+    # Truncate content to first 1500 chars to save tokens
+    truncated_content = content[:1500]
+    logger.info(f"Classifying document. Truncated length: {len(truncated_content)}")
+
+    if not settings.GEMINI_API_KEY:
+        raise AgentException("GEMINI_API_KEY is not set. Cannot run agentic classification.")
+
+    try:
+        genai.configure(api_key=settings.GEMINI_API_KEY)
+        model = genai.GenerativeModel("gemini-1.5-flash")
+
+        prompt = (
+            f"Analyze the following text and determine if it appears to be a resume or CV. "
+            f"Output a JSON object with a single boolean key 'is_resume'.\n\n"
+            f"Text:\n{truncated_content}"
+        )
+
+        response = model.generate_content(
+            prompt,
+            generation_config={
+                "response_mime_type": "application/json",
+                "response_schema": {
+                    "type": "OBJECT",
+                    "properties": {
+                        "is_resume": {"type": "BOOLEAN"}
+                    },
+                    "required": ["is_resume"]
+                }
+            }
+        )
+
+        res_json = json.loads(response.text)
+        is_resume = res_json.get("is_resume", False)
+
+        if is_resume:
+            logger.info("Document classified as a RESUME. Proceeding.")
+        else:
+            logger.warning("Document classified as NON-RESUME. Halting pipeline.")
+
+        return {"is_resume": is_resume}
+
+    except Exception as e:
+        logger.error(f"Error during document classification: {str(e)}")
+        raise AgentException(f"Document classification failed: {str(e)}", original_exception=e)
+
+
 def extract_resume(state: AgentState) -> Dict[str, Any]:
     """Extract structured candidate information from resume text using Gemini.
 

@@ -11,7 +11,7 @@ from langgraph.graph import StateGraph, START, END
 from src.core.config.config import get_settings
 from src.core.logger.logger import setup_logger
 from src.agents.state import AgentState
-from src.agents.nodes import extract_resume, validate_data, match_job
+from src.agents.nodes import extract_resume, validate_data, match_job, classify_document
 
 logger = setup_logger("agent_graph")
 
@@ -47,16 +47,38 @@ def should_continue(state: AgentState) -> str:
     return "extract_resume"
 
 
+def route_classification(state: AgentState) -> str:
+    """Determine whether to proceed with extraction based on classification."""
+    is_resume = state.get("is_resume")
+    if is_resume:
+        logger.info("Classification passed. Routing to extract_resume.")
+        return "extract_resume"
+    else:
+        logger.warning("Classification failed. Routing to END.")
+        return END
+
+
 # Build the Graph
 builder = StateGraph(AgentState)
 
 # Register Nodes
+builder.add_node("classify_document", classify_document)
 builder.add_node("extract_resume", extract_resume)
 builder.add_node("validate_data", validate_data)
 builder.add_node("match_job", match_job)
 
 # Register Flow Edges
-builder.add_edge(START, "extract_resume")
+builder.add_edge(START, "classify_document")
+
+builder.add_conditional_edges(
+    "classify_document",
+    route_classification,
+    {
+        "extract_resume": "extract_resume",
+        END: END,
+    }
+)
+
 builder.add_edge("extract_resume", "validate_data")
 
 # Register Conditional Routing Edges
@@ -90,6 +112,7 @@ def run_agentic_pipeline(document_content: str, document_id: str) -> Dict[str, A
         "messages": [],
         "document_content": document_content,
         "document_id": document_id,
+        "is_resume": None,
         "extracted_data": None,
         "validation_errors": [],
         "revision_count": 0,

@@ -16,6 +16,7 @@ class AgentState(TypedDict):
     messages: Annotated[List[Any], add_messages]
     document_content: str
     document_id: str
+    is_resume: Optional[bool]
     extracted_data: Optional[ResumeSchema]
     validation_errors: List[str]
     revision_count: int
